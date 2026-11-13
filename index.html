@@ -14,7 +14,9 @@
 html,body{margin:0;padding:0;width:100%;min-height:100%;font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue","Yu Gothic",Meiryo,sans-serif;background:#f3f4f6;color:#111827;touch-action:manipulation}
 body{padding-bottom:max(24px,env(safe-area-inset-bottom))}
 .app{max-width:900px;margin:0 auto;padding:12px}
-h1{margin:4px 0 16px;text-align:center;font-size:25px;letter-spacing:.04em}
+.titlebar{position:relative;display:flex;align-items:center;justify-content:center;margin:4px 0 16px;min-height:40px}
+h1{margin:0;text-align:center;font-size:25px;letter-spacing:.04em}
+.reset-button{position:absolute;right:0;top:50%;transform:translateY(-50%);padding:9px 13px;background:#dc2626;color:#fff;font-size:14px;white-space:nowrap}
 .card{background:#fff;border-radius:14px;padding:14px;margin-bottom:14px;box-shadow:0 2px 9px rgba(0,0,0,.08)}
 label{font-weight:700;display:block;margin-bottom:7px}
 select,input{width:100%;min-height:46px;border:1px solid #cbd5e1;border-radius:10px;padding:9px 11px;font-size:17px;background:#fff;color:#111827}
@@ -38,7 +40,7 @@ th{background:#e5e7eb;font-weight:800}
 .notes{margin:12px 0 0;padding:11px 13px;background:#f8fafc;border-radius:10px}
 .notes-title{font-weight:800;margin-bottom:6px}.notes div{margin:4px 0}
 @media(max-width:560px){
- .app{padding:10px}h1{font-size:22px}
+ .app{padding:10px}.titlebar{margin-bottom:16px}h1{font-size:22px}.reset-button{padding:8px 10px;font-size:13px}
  .counter{grid-template-columns:minmax(0,1fr) auto 84px}
  .counter-name{font-size:14px}.minus,.plus{width:40px;height:40px}
  .rate{font-size:13px}.rate strong{font-size:15px}
@@ -47,7 +49,7 @@ th{background:#e5e7eb;font-weight:800}
 </head>
 <body>
 <div class="app">
-<h1>ジャグラーカウンター</h1>
+<div class="titlebar"><h1>ジャグラーカウンター</h1><button type="button" class="reset-button" onclick="resetCounters()">リセット</button></div>
 
 <div class="card">
 <label for="machine">ジャグラー種別</label>
@@ -120,16 +122,45 @@ const MACHINE_DATA={
  n:["・ブドウを数える必要なし","・チェリー重複ボーナスに設定差あり"]}
 };
 
-const COUNTERS=[['bell','ベル回数'],['singleBB','単独BB'],['singleRB','単独RB'],['cherryBB','チェリーBB'],['cherryRB','チェリーRB']];
+const COUNTERS=[['bell','ぶどう回数'],['singleBB','単独BB'],['singleRB','単独RB'],['cherryBB','チェリーBB'],['cherryRB','チェリーRB']];
 const counts={bell:0,singleBB:0,singleRB:0,cherryBB:0,cherryRB:0};
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function renderCounters(){
  document.getElementById('counters').innerHTML=COUNTERS.map(([id,label])=>`<div class="counter"><div class="counter-name">${label}</div><div class="controls"><button class="minus" aria-label="${label}を1減らす" onclick="changeCount('${id}',-1)">−</button><div class="count" id="count-${id}">0</div><button class="plus" aria-label="${label}を1増やす" onclick="changeCount('${id}',1)">＋</button></div><div class="rate" id="rate-${id}">1/<strong>—</strong></div></div>`).join('');
 }
-function changeCount(id,delta){counts[id]=Math.max(0,counts[id]+delta);document.getElementById('count-'+id).textContent=counts[id];updateRates();}
+const STORAGE_KEY='jugglerCounterState_v1';
+function saveState(){
+ const state={machine:document.getElementById('machine').value,startGames:document.getElementById('startGames').value,currentGames:document.getElementById('currentGames').value,counts:{...counts}};
+ try{localStorage.setItem(STORAGE_KEY,JSON.stringify(state));}catch(e){}
+}
+function restoreState(){
+ try{
+  const raw=localStorage.getItem(STORAGE_KEY);
+  if(!raw)return;
+  const state=JSON.parse(raw);
+  if(state.machine&&MACHINE_DATA[state.machine])document.getElementById('machine').value=state.machine;
+  document.getElementById('startGames').value=state.startGames??'';
+  document.getElementById('currentGames').value=state.currentGames??'';
+  COUNTERS.forEach(([id])=>{const n=Number(state.counts?.[id]);counts[id]=Number.isFinite(n)?Math.max(0,Math.floor(n)):0;});
+ }catch(e){}
+}
+function resetCounters(){
+ if(!confirm('ゲーム数とすべてのカウンターをリセットします。よろしいですか？'))return;
+ COUNTERS.forEach(([id])=>{counts[id]=0;document.getElementById('count-'+id).textContent='0';});
+ document.getElementById('startGames').value='';
+ document.getElementById('currentGames').value='';
+ updateRates();
+ saveState();
+}
+function changeCount(id,delta){
+ counts[id]=Math.max(0,counts[id]+delta);
+ document.getElementById('count-'+id).textContent=counts[id];
+ updateRates();saveState();
+}
 function updateRates(){
  const games=Number(document.getElementById('currentGames').value)-Number(document.getElementById('startGames').value);
  COUNTERS.forEach(([id])=>{const el=document.getElementById('rate-'+id);el.innerHTML=(games>0&&counts[id]>0)?`1/<strong>${(games/counts[id]).toFixed(2)}</strong>`:'1/<strong>—</strong>';});
+ saveState();
 }
 function renderMachineData(){
  const name=document.getElementById('machine').value,d=MACHINE_DATA[name];
@@ -139,7 +170,14 @@ function renderMachineData(){
  document.getElementById('tableArea').innerHTML=h;
  document.getElementById('notesArea').innerHTML='<div class="notes-title">備考</div>'+d.n.map(x=>'<div>'+esc(x)+'</div>').join('');
 }
-renderCounters();renderMachineData();updateRates();
+renderCounters();
+restoreState();
+COUNTERS.forEach(([id])=>{document.getElementById('count-'+id).textContent=counts[id];});
+renderMachineData();
+updateRates();
+document.getElementById('machine').addEventListener('change',saveState);
+window.addEventListener('pagehide',saveState);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')saveState();});
 document.addEventListener('dblclick',e=>e.preventDefault());
 </script>
 </body>
